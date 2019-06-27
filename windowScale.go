@@ -11,6 +11,8 @@ import (
 
 var (
 	windowToMaxOpt = flag.String("windowName", "Visual Studio Code", "Pass the name of the window you wish to maximize over multiple monitors")
+	allMode        = flag.Bool("all", false, "Set this flag to resize all 'windowName' matches")
+	borderLen      = flag.Int("border", 0, "Size buffer on the border of the scaled window for fine tuning")
 )
 
 var (
@@ -101,8 +103,8 @@ func FindMonitors() (resultRect rect, err error) {
 	return
 }
 
-func FindWindow(title string) (syscall.Handle, error) {
-	var hwnd syscall.Handle
+func FindWindow(title string) ([]syscall.Handle, error) {
+	var hwnd []syscall.Handle
 	cb := syscall.NewCallback(func(h syscall.Handle, p uintptr) uintptr {
 		b := make([]uint16, 200)
 		_, err := GetWindowText(h, &b[0], int32(len(b)))
@@ -113,14 +115,16 @@ func FindWindow(title string) (syscall.Handle, error) {
 		fmt.Println(syscall.UTF16ToString(b))
 		if strings.Contains(syscall.UTF16ToString(b), title) {
 			// note the window
-			hwnd = h
-			return 0 // stop enumeration
+			hwnd = append(hwnd, h)
+			if !*allMode {
+				return 0 // stop enumeration
+			}
 		}
 		return 1 // continue enumeration
 	})
 	EnumWindows(cb, 0)
-	if hwnd == 0 {
-		return 0, fmt.Errorf("No window with title '%s' found", title)
+	if len(hwnd) == 0 {
+		return nil, fmt.Errorf("No window with title '%s' found", title)
 	}
 	return hwnd, nil
 }
@@ -206,7 +210,10 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("Found '%s' window: handle=0x%x\n", title, h)
+	fmt.Printf("Found '%s' window(s):\n", title)
+	for _, v := range h {
+		fmt.Printf("handle=0x%x\n", v)
+	}
 
 	rect, fme := FindMonitors()
 	if fme != nil {
@@ -214,9 +221,10 @@ func main() {
 	}
 	fmt.Println("Resulting rect is", rect)
 
-	borderLen := 8
-	moveErr := MoveWindow(h, int(rect.left)-borderLen, int(rect.top), int(rect.right-rect.left)+2*borderLen, int(rect.bottom-rect.top)+borderLen, true)
-	if moveErr != nil {
-		log.Fatal(moveErr)
+	for _, v := range h {
+		moveErr := MoveWindow(v, int(rect.left)-*borderLen, int(rect.top), int(rect.right-rect.left)+2*(*borderLen), int(rect.bottom-rect.top)+*borderLen, true)
+		if moveErr != nil {
+			log.Fatal(moveErr)
+		}
 	}
 }
